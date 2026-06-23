@@ -5,7 +5,7 @@
 
 > ทำงานบน **GitHub Pages** (ฟรี) + **Firebase Realtime Database** (ฟรี) — ไม่ต้องมีเซิร์ฟเวอร์เอง
 
-> ✅ **ตั้งค่าเสร็จแล้วและใช้งานได้จริง** — เว็บอยู่ที่ <https://nutgittitus8.github.io/> เชื่อม Firebase โปรเจกต์ `modern-fream` (RTDB โซน Singapore) แล้ว ทดสอบสั่ง→ครัวเห็น→สถานะวิ่งกลับ ผ่านครบ · รหัสผ่านหน้าครัวตอนนี้คือ `1234` (เปลี่ยนได้ใน `firebase-config.js`) · หัวข้อ "ตั้งค่า Firebase" ด้านล่างเก็บไว้อ้างอิงเฉยๆ
+> ✅ **ตั้งค่าเสร็จแล้วและใช้งานได้จริง** — เว็บอยู่ที่ <https://modern-frame.github.io/> เชื่อม Firebase โปรเจกต์ `modern-fream` (RTDB โซน Singapore) แล้ว ทดสอบสั่ง→ครัวเห็น→สถานะวิ่งกลับ ผ่านครบ · รหัสผ่านหน้าครัวตอนนี้คือ `1234` (เปลี่ยนได้ใน `firebase-config.js`) · หัวข้อ "ตั้งค่า Firebase" ด้านล่างเก็บไว้อ้างอิงเฉยๆ
 
 ---
 
@@ -13,8 +13,8 @@
 
 | ใคร | ลิงก์ | ทำอะไร |
 |-----|-------|--------|
-| 🧑 **ลูกค้า** | `https://nutgittitus8.github.io/?table=7` | ดูเมนู / สั่งอาหาร / ดูสถานะ (ฝังอยู่ใน QR แต่ละโต๊ะ) |
-| 👨‍🍳 **เจ้าของร้าน = พ่อครัว (คนเดียว)** | `https://nutgittitus8.github.io/kitchen.html` | เห็นออเดอร์สดๆ กดเริ่มทำ/เสิร์ฟ + ปุ่ม **🖨️ QR โต๊ะ** ในหัวหน้าครัวกดไปสร้าง/พิมพ์ QR ได้เลย |
+| 🧑 **ลูกค้า** | `https://modern-frame.github.io/?table=7` | ดูเมนู / สั่งอาหาร / ดูสถานะ (ฝังอยู่ใน QR แต่ละโต๊ะ) |
+| 👨‍🍳 **เจ้าของร้าน = พ่อครัว (คนเดียว)** | `https://modern-frame.github.io/kitchen.html` | เห็นออเดอร์สดๆ กดเริ่มทำ/เสิร์ฟ + ปุ่ม **🖨️ QR โต๊ะ** ในหัวหน้าครัวกดไปสร้าง/พิมพ์ QR ได้เลย |
 
 > เจ้าของร้านเป็นพ่อครัวคนเดียวกัน → **จำแค่ลิงก์ `kitchen.html` ลิงก์เดียว** เป็นศูนย์กลาง (สร้าง QR กดจากในนั้นได้) · ส่วนหน้าลูกค้าอยู่ใน QR อยู่แล้วไม่ต้องจำ
 
@@ -56,7 +56,8 @@
         "createdAt": { ".validate": "newData.isNumber()" },
         "servedAt":  { ".validate": "newData.isNumber()" }
       }
-    }
+    },
+    "stock": { ".read": true, ".write": true }
   }
 }
 ```
@@ -75,7 +76,7 @@
 
 ## 🚀 ขึ้น GitHub Pages
 
-เว็บนี้ถูก deploy แล้วที่ repo **`nutgittitus8.github.io`** (เป็น user-pages repo จึงอยู่ที่ root URL)
+เว็บนี้ deploy ที่ repo **`modern-frame/modern-frame.github.io`** (เป็น org-pages repo จึงอยู่ที่ root URL `https://modern-frame.github.io/`)
 
 ถ้าจะตั้งใหม่เองตั้งแต่ต้น รันใน `D:\Modern fream`:
 
@@ -83,15 +84,15 @@
 git init -b main
 git add .
 git commit -m "Modern Frame: ordering + realtime kitchen"
-gh repo create nutgittitus8.github.io --public --source=. --push
+gh repo create modern-frame/modern-frame.github.io --public --source=. --push
 # เปิด GitHub Pages (วิธีที่ชัวร์สุด: เปิดผ่านหน้าเว็บ Settings > Pages เลือก Branch=main / โฟลเดอร์ = / (root))
-gh api -X POST "repos/nutgittitus8/nutgittitus8.github.io/pages" -f "source[branch]=main" -f "source[path]=/"
+gh api -X POST "repos/modern-frame/modern-frame.github.io/pages" -f "source[branch]=main" -f "source[path]=/"
 # ตรวจว่าเปิดติดไหม (จะคืน URL ของเว็บ):
-gh api "repos/nutgittitus8/nutgittitus8.github.io/pages" --jq .html_url
+gh api "repos/modern-frame/modern-frame.github.io/pages" --jq .html_url
 ```
 
 จากนั้นรอ ~1 นาที เว็บจะอยู่ที่:
-`https://nutgittitus8.github.io/`
+`https://modern-frame.github.io/`
 
 อัปเดตทีหลัง: แก้ไฟล์ → `git add . && git commit -m "..." && git push` (เว็บอัปเดตอัตโนมัติใน ~1 นาที)
 
@@ -120,8 +121,14 @@ gh api "repos/nutgittitus8/nutgittitus8.github.io/pages" --jq .html_url
 
 ---
 
+## ✨ ฟีเจอร์เสริมที่มีแล้ว
+- **PromptPay** — ใส่ `window.PROMPTPAY_ID` (เบอร์พร้อมเพย์) ใน `firebase-config.js` → ลูกค้าเห็น QR จ่ายเงินพร้อมยอดอัตโนมัติหลังสั่ง (เว้นว่าง = ปิด)
+- **ของหมด** — กดปุ่ม **🍴 เมนู** ในหน้าครัว เปิด/ปิดเมนูที่หมดได้ ลูกค้าจะสั่งไม่ได้ (เก็บใน Firebase `/stock`)
+- **สรุปยอดขายวันนี้** — โชว์บนหัวหน้าครัว (จำนวนออเดอร์ + ยอดที่เสิร์ฟแล้ว)
+- **กันจอครัวดับ** — หน้าครัวขอ Wake Lock อัตโนมัติ กันแท็บเล็ตหลับแล้วพลาดออเดอร์
+
 ## 🛠️ ปรับแต่งต่อได้
-- **เมนู/ราคา/รูป**: แก้ array `MENU` ใน `index.html`
+- **เมนู/ราคา/รูป**: แก้ `window.MENU` ใน **`menu.js`** (ไฟล์เดียว ใช้ทั้งหน้าลูกค้า+ครัว) — เพิ่มเมนูก๊อปบล็อก `{...}` (id ห้ามซ้ำ, รูปเป็น data URL ในคีย์ `img`)
 - **ตัวเลือกเครื่องดื่ม**: แก้ `TEMPS` / `SWEETS` ใน `index.html`
-- **ชื่อร้าน/รหัสครัว**: แก้ `firebase-config.js`
-- อยากได้ระบบชำระเงิน, สรุปยอดขายรายวัน, หรือพิมพ์สลิปเข้าครัว — แจ้งได้เลย
+- **ชื่อร้าน/รหัสครัว/PromptPay**: แก้ `firebase-config.js`
+- อยากได้พิมพ์สลิปเข้าครัว, โดเมนของร้าน, หรือล็อก Auth เพิ่ม — แจ้งได้เลย

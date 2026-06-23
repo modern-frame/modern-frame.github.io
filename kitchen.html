@@ -44,6 +44,21 @@
   .tab.on{background:var(--cream);color:var(--ink);border-color:var(--cream)}
   .badge{min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--accent);color:#fff;font-size:11px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
   .tab.on .badge{background:var(--ink);color:var(--cream)}
+  .hsum{max-width:1100px;margin:9px auto 0;font-size:13px;color:#C9BBA6;text-align:center}
+  .hsum b{color:var(--cream)}
+  /* stock manager modal */
+  .modal-wrap{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:40px 14px;overflow-y:auto}
+  .modal{background:var(--card);color:var(--ink);width:100%;max-width:520px;border-radius:16px;overflow:hidden}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line-soft)}
+  .modal-head h3{margin:0;font-size:17px}
+  .modal-body{padding:8px 18px 18px;max-height:70vh;overflow-y:auto}
+  .mcat{font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--ink-soft);margin:16px 0 6px}
+  .mrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px dashed var(--line-soft)}
+  .mrow .mnm{font-size:15px;font-weight:500}
+  .mrow .mnm.off{color:var(--danger);text-decoration:line-through}
+  .toggle{flex:0 0 auto;border-radius:999px;padding:8px 16px;font-size:13.5px;font-weight:600;border:1px solid var(--line)}
+  .toggle.on{background:var(--ok-bg);color:var(--ok);border-color:var(--ok-bg)}
+  .toggle.off{background:var(--danger-bg);color:var(--danger);border-color:var(--danger-bg)}
 
   main{max-width:1100px;margin:0 auto;padding:14px 14px 60px}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
@@ -109,6 +124,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
 <script src="firebase-config.js"></script>
+<script src="menu.js"></script>
 <script>
   window.__db=null; window.__configured=false;
   (function(){
@@ -152,6 +168,7 @@
       <div class="htitle"><span class="nm frame-word" id="shopName">Modern Frame</span><span class="sub">kitchen · หน้าครัว</span></div>
       <div class="hbtns">
         <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">กำลังเชื่อม…</span></div>
+        <button class="hbtn" id="stockBtn">🍴 เมนู</button>
         <a class="hbtn" href="qr.html" target="_blank" rel="noopener" style="text-decoration:none">🖨️ QR โต๊ะ</a>
         <button class="hbtn" id="soundBtn">🔔 เสียง: เปิด</button>
       </div>
@@ -160,6 +177,7 @@
       <button class="tab on" data-tab="active">กำลังทำ <span class="badge" id="bActive">0</span></button>
       <button class="tab" data-tab="served">เสร็จแล้ววันนี้ <span class="badge" id="bServed">0</span></button>
     </div>
+    <div class="hsum" id="hsum"></div>
   </header>
   <main>
     <div class="grid" id="grid"></div>
@@ -228,6 +246,14 @@ let orders={};            // key -> order
 let seen=new Set();       // keys ที่เห็นแล้ว (กันเด้งเสียงซ้ำ)
 let primed=false;         // โหลดรอบแรกเสร็จหรือยัง
 let newKeys=new Set();    // keys ที่เพิ่งเข้ามา (ใส่ animation)
+let soldOut={};           // {itemId:true} = เมนูที่กดปิด (ของหมด)
+let stockOpen=false;      // เปิดหน้าจัดการเมนูอยู่ไหม
+let wakeLock=null;        // กันจอดับ
+
+async function keepAwake(){
+  try{ if("wakeLock" in navigator){ wakeLock=await navigator.wakeLock.request("screen"); } }
+  catch(e){ /* บางเบราว์เซอร์/แบตต่ำอาจไม่ให้ */ }
+}
 
 function enterApp(){
   $("app").classList.remove("hidden");
@@ -273,6 +299,13 @@ function enterApp(){
   });
   // อัปเดตเวลา "กี่นาทีที่แล้ว" ทุก 15 วิ
   setInterval(updateAgos,15000);
+  // กันจอดับ (Wake Lock) — กันแท็บเล็ต/มือถือครัวจอหลับแล้วพลาดออเดอร์
+  keepAwake();
+  document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") keepAwake(); });
+  // สถานะเมนูหมด (ใช้ในตัวจัดการเมนู + นับ)
+  window.__db.ref("stock").on("value",s=>{ soldOut=s.val()||{}; if(stockOpen) renderStockRows(); }, err=>console.warn("อ่านสถานะสต๊อกไม่ได้:",err&&err.code));
+  // ปุ่มจัดการเมนู (ของหมด)
+  $("stockBtn").onclick=openStockManager;
 }
 
 function onNewOrder(o){
@@ -299,7 +332,22 @@ function listFor(tab){
             .sort((a,b)=>(b.servedAt||b.createdAt||0)-(a.servedAt||a.createdAt||0)); // ใหม่สุดก่อน
 }
 
+function renderSummary(){
+  const el=$("hsum"); if(!el) return;
+  const today=startOfToday();
+  let count=0, revenue=0;
+  Object.keys(orders).forEach(k=>{
+    const o=orders[k];
+    if((o.createdAt||0)<today || o.status==="cancelled") return;
+    count++;
+    if(o.status==="served") revenue += Number(o.total)||0;
+  });
+  const awake = (wakeLock && !wakeLock.released) ? ' · 🔆 จอไม่ดับ' : '';
+  el.innerHTML = `📅 วันนี้ · <b>${count}</b> ออเดอร์ · ขายแล้ว <b>฿${revenue}</b>${awake}`;
+}
+
 function render(){
+  renderSummary();
   const active=listFor("active"), served=listFor("served");
   $("bActive").textContent=active.length;
   $("bServed").textContent=served.length;
@@ -391,6 +439,51 @@ function updateAgos(){
     el.textContent=agoText(ts);
     el.className="ago "+agoClass(ts,status);
   });
+}
+
+// ---------- จัดการเมนู: ปิด/เปิด "ของหมด" (เขียนเข้า Firebase /stock) ----------
+function openStockManager(){
+  stockOpen=true;
+  let wrap=document.getElementById("stockModal");
+  if(!wrap){
+    wrap=document.createElement("div");
+    wrap.id="stockModal"; wrap.className="modal-wrap";
+    wrap.innerHTML=`<div class="modal">
+      <div class="modal-head"><h3>เมนู · ปิด/เปิด "ของหมด"</h3>
+        <button id="stockClose" style="width:34px;height:34px;border-radius:50%;background:var(--milk);border:none;font-size:20px;color:var(--ink-soft);cursor:pointer">×</button></div>
+      <div class="modal-body" id="stockBody"></div>
+    </div>`;
+    document.body.appendChild(wrap);
+    wrap.addEventListener("click",e=>{ if(e.target===wrap) closeStockManager(); });
+    wrap.querySelector("#stockClose").onclick=closeStockManager;
+  }
+  wrap.style.display="flex";
+  renderStockRows();
+}
+function closeStockManager(){ stockOpen=false; const w=document.getElementById("stockModal"); if(w) w.style.display="none"; }
+function renderStockRows(){
+  const body=document.getElementById("stockBody"); if(!body) return;
+  const MENU=window.MENU||[], CAT=window.CAT||{};
+  if(!MENU.length){ body.innerHTML='<p style="color:var(--ink-soft);padding:24px 0;text-align:center">โหลดเมนูไม่ได้ (menu.js)</p>'; return; }
+  const cats=[]; MENU.forEach(m=>{ if(cats.indexOf(m.cat)<0) cats.push(m.cat); });
+  let html="";
+  cats.forEach(c=>{
+    html+=`<div class="mcat">${esc(CAT[c]||c)}</div>`;
+    MENU.filter(m=>m.cat===c).forEach(m=>{
+      const off=!!soldOut[m.id];
+      html+=`<div class="mrow"><span class="mnm${off?' off':''}">${esc(m.nm)}</span>
+        <button class="toggle ${off?'off':'on'}" data-id="${esc(m.id)}" data-off="${off?1:0}">${off?'● ของหมด (กดเปิดขาย)':'✓ มีขาย'}</button></div>`;
+    });
+  });
+  body.innerHTML=html;
+  body.querySelectorAll(".toggle").forEach(b=>b.onclick=()=>toggleStock(b.dataset.id, b.dataset.off==="1"));
+}
+function toggleStock(id, currentlyOff){
+  const ref=window.__db.ref("stock/"+id);
+  (currentlyOff ? ref.remove() : ref.set(true)).catch(e=>showToast("ทำรายการไม่สำเร็จ"));
+  if(currentlyOff) delete soldOut[id]; else soldOut[id]=true;  // อัปเดตทันที (listener sync อีกที)
+  renderStockRows();
+  showToast(currentlyOff ? "เปิดขายแล้ว" : "ปิดเมนู (ของหมด) แล้ว");
 }
 
 function action(key,act){
