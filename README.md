@@ -57,7 +57,8 @@
         "servedAt":  { ".validate": "newData.isNumber()" }
       }
     },
-    "stock": { ".read": true, ".write": true }
+    "stock": { ".read": true, ".write": true },
+    "calls": { ".read": true, ".write": true }
   }
 }
 ```

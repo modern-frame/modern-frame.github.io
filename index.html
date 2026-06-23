@@ -103,6 +103,7 @@
   .ppay-box .pp-h{font-weight:600;font-size:15px;margin-bottom:2px}
   .ppay-qr{display:flex;justify-content:center;margin:14px 0 8px}
   .ppay-qr img,.ppay-qr canvas{border-radius:8px;border:1px solid var(--line)}
+  .billbtn{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--accent-deep);background:var(--milk);border:1px solid var(--line);padding:6px 12px;border-radius:999px;white-space:nowrap}
 </style>
 <!-- ===== Firebase (หลังบ้านจริง) ===== -->
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
@@ -129,7 +130,10 @@
     <header>
       <div class="topline">
         <div class="brand"><span class="name frame-word">Modern Frame</span><span class="sub">food · coffee · milk</span></div>
-        <div class="table-badge"><span class="icon">🍽</span> โต๊ะ <b id="tableNo">—</b></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="billbtn hidden" id="billBtn">💵 เก็บเงิน</button>
+          <div class="table-badge"><span class="icon">🍽</span> โต๊ะ <b id="tableNo">—</b></div>
+        </div>
       </div>
       <div class="cats" id="cats"></div>
     </header>
@@ -145,7 +149,8 @@
 
 <script>
 const TEMPS=["ร้อน","เย็น","ปั่น"];
-const SWEETS=["หวานปกติ","หวานน้อย","ไม่หวาน"];
+const SWEETS=["หวาน 100%","หวาน 50%","หวาน 25%","หวาน 0%"];
+const SPICY=["เผ็ดน้อย","เผ็ดกลาง","เผ็ดมาก"];
 let activeCat="all";
 let cart=[];
 let soldOut={};   // {itemId:true} = หมดชั่วคราว (ครัวกดปิด ผ่าน Firebase /stock)
@@ -193,8 +198,13 @@ let sheet=null;
 function closeSheet(){if(sheet){sheet.remove();sheet=null;}}
 function openItem(id){
   const m=MENU.find(x=>x.id===id);
-  let temp=m.drink?"เย็น":null,sweet=m.drink?"หวานปกติ":null,qty=1,note="";
+  let temp=m.drink?"เย็น":null, sweet=m.drink?"หวาน 100%":null;
+  let spicy=(!m.drink&&m.spicy)?"เผ็ดกลาง":null;
+  let addons={};          // {addonName:true}
+  let qty=1,note="";
   sheet=document.createElement("div");sheet.className="sheet-wrap";
+  function chosenAddons(){ return (m.addons||[]).filter(a=>addons[a.nm]); }
+  function unit(){ return m.pr + chosenAddons().reduce((s,a)=>s+a.pr,0); }
   function draw(){
     sheet.innerHTML=`<div class="sheet">
       <div class="sheet-head"><h2>${m.nm}</h2><button class="x" aria-label="ปิด">×</button></div>
@@ -209,11 +219,17 @@ function openItem(id){
         <div class="opts" id="tempOpts">${TEMPS.map(t=>`<button class="opt${t===temp?' on':''}" data-t="${t}">${t}</button>`).join("")}</div>
         <div class="opt-label">ความหวาน</div>
         <div class="opts" id="sweetOpts">${SWEETS.map(s=>`<button class="opt${s===sweet?' on':''}" data-s="${s}">${s}</button>`).join("")}</div>`:""}
+        ${(!m.drink&&m.spicy)?`
+        <div class="opt-label">ระดับความเผ็ด</div>
+        <div class="opts" id="spicyOpts">${SPICY.map(s=>`<button class="opt${s===spicy?' on':''}" data-sp="${s}">${s}</button>`).join("")}</div>`:""}
+        ${(m.addons&&m.addons.length)?`
+        <div class="opt-label">เพิ่มพิเศษ</div>
+        <div class="opts" id="addonOpts">${m.addons.map(a=>`<button class="opt${addons[a.nm]?' on':''}" data-ad="${a.nm}">${a.nm} +${a.pr}</button>`).join("")}</div>`:""}
         <div class="opt-label">หมายเหตุถึงครัว (ถ้ามี)</div>
-        <textarea class="note" id="noteIn" rows="2" placeholder="เช่น ไม่ใส่ผัก, เผ็ดน้อย">${esc(note)}</textarea>
+        <textarea class="note" id="noteIn" rows="2" placeholder="เช่น ไม่ใส่ผัก, ไม่ใส่ผงชูรส">${esc(note)}</textarea>
         <div class="opt-label" style="text-align:center">จำนวน</div>
         <div class="qty"><button class="qbtn" id="dec" aria-label="ลด">−</button><span class="qnum" id="qn">${qty}</span><button class="qbtn" id="inc" aria-label="เพิ่ม">+</button></div>
-        <button class="cta" id="addBtn"><span>เพิ่มลงตะกร้า</span><span class="mono">฿${m.pr*qty}</span></button>
+        <button class="cta" id="addBtn"><span>เพิ่มลงตะกร้า</span><span class="mono">฿${unit()*qty}</span></button>
       </div></div>`;
     bind();
   }
@@ -226,20 +242,23 @@ function openItem(id){
       sheet.querySelectorAll("#tempOpts .opt").forEach(b=>b.onclick=()=>{temp=b.dataset.t;note=noteIn.value;draw();});
       sheet.querySelectorAll("#sweetOpts .opt").forEach(b=>b.onclick=()=>{sweet=b.dataset.s;note=noteIn.value;draw();});
     }
+    if(!m.drink&&m.spicy) sheet.querySelectorAll("#spicyOpts .opt").forEach(b=>b.onclick=()=>{spicy=b.dataset.sp;note=noteIn.value;draw();});
+    if(m.addons&&m.addons.length) sheet.querySelectorAll("#addonOpts .opt").forEach(b=>b.onclick=()=>{addons[b.dataset.ad]=!addons[b.dataset.ad];note=noteIn.value;draw();});
     sheet.querySelector("#inc").onclick=()=>{qty++;note=noteIn.value;draw();};
     sheet.querySelector("#dec").onclick=()=>{if(qty>1){qty--;note=noteIn.value;draw();}};
-    sheet.querySelector("#addBtn").onclick=()=>{addToCart(m,{temp,sweet,note,qty});closeSheet();};
+    sheet.querySelector("#addBtn").onclick=()=>{addToCart(m,{temp,sweet,spicy,addons:chosenAddons(),note,qty,up:unit()});closeSheet();};
   }
   document.body.appendChild(sheet);draw();
 }
-function addToCart(m,{temp,sweet,note,qty}){
-  const key=[m.id,temp,sweet,note].join("|");
+function addToCart(m,{temp,sweet,spicy,addons,note,qty,up}){
+  const adKey=(addons||[]).map(a=>a.nm).sort().join(",");
+  const key=[m.id,temp,sweet,spicy,adKey,note].join("|");
   const ex=cart.find(c=>c.key===key);
-  if(ex)ex.qty+=qty; else cart.push({key,id:m.id,nm:m.nm,pr:m.pr,qty,temp,sweet,note});
+  if(ex)ex.qty+=qty; else cart.push({key,id:m.id,nm:m.nm,pr:m.pr,up:up||m.pr,qty,temp,sweet,spicy,addons:addons||[],note});
   syncBar();renderMenu();toast(`เพิ่ม ${m.nm} แล้ว`);
 }
 function cartCount(){return cart.reduce((s,c)=>s+c.qty,0);}
-function cartTotal(){return cart.reduce((s,c)=>s+c.qty*c.pr,0);}
+function cartTotal(){return cart.reduce((s,c)=>s+c.qty*(c.up||c.pr),0);}
 const bar=document.getElementById("cartbar");
 function syncBar(){
   const n=cartCount();bar.classList.toggle("hidden",n===0);
@@ -251,10 +270,11 @@ function openCart(){
   closeSheet();sheet=document.createElement("div");sheet.className="sheet-wrap";
   function rows(){
     return cart.map((c,i)=>{
-      const opt=[c.temp,c.sweet].filter(Boolean).join(" · ");
+      const adon=(c.addons||[]).map(a=>"+"+a.nm).join(" ");
+      const opt=[c.temp,c.sweet,c.spicy,adon].filter(Boolean).join(" · ");
       return `<div class="crow"><div class="info"><div class="cnm">${c.nm}</div>
         ${opt?`<div class="copt">${esc(opt)}</div>`:""}${c.note?`<div class="cnote">📝 ${esc(c.note)}</div>`:""}</div>
-        <div class="cside"><div class="mono">฿${c.pr*c.qty}</div>
+        <div class="cside"><div class="mono">฿${(c.up||c.pr)*c.qty}</div>
         <div class="stepper"><button class="sbtn" data-dec="${i}" aria-label="ลด">−</button><span class="mono">${c.qty}</span><button class="sbtn" data-inc="${i}" aria-label="เพิ่ม">+</button></div></div></div>`;
     }).join("");
   }
@@ -265,14 +285,14 @@ function openCart(){
         ${cart.length?`<div style="margin-top:16px"><div class="sumrow"><span>ยอดรวม (${cartCount()} รายการ)</span><span class="mono">฿${cartTotal()}</span></div>
         <div class="sumrow total"><span>ทั้งหมด</span><span class="mono">฿${cartTotal()}</span></div></div>
         <button class="cta" id="placeBtn"><span>ยืนยันสั่งอาหาร</span><span class="mono">฿${cartTotal()}</span></button>`:""}
-        <button class="cta ghost" id="callStaff" style="margin-top:10px">เรียกพนักงาน</button>
+        <button class="cta ghost" id="callStaff" style="margin-top:10px">🔔 เรียกพนักงาน</button>
       </div></div>`;
     sheet.querySelector(".x").onclick=closeSheet;
     sheet.onclick=e=>{if(e.target===sheet)closeSheet();};
     sheet.querySelectorAll("[data-inc]").forEach(b=>b.onclick=()=>{const c=cart[b.dataset.inc];if(soldOut[c.id]){toast(c.nm+" หมดแล้ว");return;}c.qty++;syncBar();draw();});
     sheet.querySelectorAll("[data-dec]").forEach(b=>b.onclick=()=>{const i=b.dataset.dec;cart[i].qty--;if(cart[i].qty<=0)cart.splice(i,1);syncBar();renderMenu();cart.length?draw():closeSheet();});
     const pb=sheet.querySelector("#placeBtn");if(pb)pb.onclick=placeOrder;
-    sheet.querySelector("#callStaff").onclick=()=>{toast("เรียกพนักงานแล้ว กำลังไปที่โต๊ะ "+(table||"—"));};
+    sheet.querySelector("#callStaff").onclick=()=>{callKitchen("staff");toast("เรียกพนักงานแล้ว กำลังไปที่โต๊ะ "+(table||"—"));};
   }
   document.body.appendChild(sheet);draw();
 }
@@ -284,7 +304,7 @@ function placeOrder(){
   if(n===0){ placing=false; return; }
   const outItem=cart.find(c=>soldOut[c.id]);
   if(outItem){ placing=false; toast("“"+outItem.nm+"” หมดแล้ว กรุณาเอาออกจากตะกร้า"); return; }
-  const items=cart.map(c=>({id:c.id,nm:c.nm,pr:c.pr,qty:c.qty,temp:c.temp||null,sweet:c.sweet||null,note:c.note||""}));
+  const items=cart.map(c=>({id:c.id,nm:c.nm,pr:c.pr,up:c.up||c.pr,qty:c.qty,temp:c.temp||null,sweet:c.sweet||null,spicy:c.spicy||null,addons:c.addons||[],note:c.note||""}));
   const order={orderNo,table:String(table||"—"),items,count:n,total,status:"received",
     createdAt: window.__configured ? firebase.database.ServerValue.TIMESTAMP : Date.now()};
   // ===== ส่งออเดอร์เข้า Firebase (หน้าครัวจะเห็นทันที) =====
@@ -295,6 +315,7 @@ function placeOrder(){
       orderRef.set(order).catch(err=>{console.error("ส่งออเดอร์ไม่สำเร็จ:",err);const h=document.getElementById("statusHint");if(h)h.textContent="⚠️ ส่งออเดอร์ไม่สำเร็จ — กรุณาแจ้งพนักงาน";});
     }catch(e){ console.error("ส่งออเดอร์ไม่สำเร็จ:",e); orderRef=null; }
   }
+  if(orderRef) addToBill(orderNo,total,items);   // เก็บบิลเฉพาะออเดอร์ที่ส่งเข้าครัวจริง
   cart=[];syncBar();closeSheet();
   showOrderStatus(orderNo,n,total,orderRef);
   placing=false;
@@ -309,10 +330,12 @@ function showOrderStatus(orderNo,n,total,orderRef){
     <div class="steps" id="statusSteps"></div>
     <div id="statusHint" style="color:var(--ink-soft);font-size:12.5px;margin-top:2px"></div>
     <div id="ppay" style="max-width:300px;margin:0 auto;text-align:center"></div>
-    <button class="cta ghost" style="max-width:260px;margin:28px auto 0" onclick="location.href='?table=${table||''}'">กลับไปหน้าเมนู</button>
+    <button class="cta" id="billFromStatus" style="max-width:300px;margin:22px auto 0">💵 ดูบิล / เรียกเก็บเงิน</button>
+    <button class="cta ghost" style="max-width:300px;margin:10px auto 0" onclick="location.href='?table=${table||''}'">＋ สั่งเพิ่ม / กลับเมนู</button>
   </div>`;
   renderStatusSteps("received",t);
   renderPromptPay(total);
+  const bb=document.getElementById("billFromStatus"); if(bb) bb.onclick=openBill;
   const hint=document.getElementById("statusHint");
   if(orderRef){
     if(hint) hint.textContent="● อัปเดตสถานะจากครัวแบบเรียลไทม์";
@@ -368,18 +391,64 @@ function promptPayPayload(id,amount){
   const toCrc=data+"6304";
   return toCrc+ppCrc(toCrc);
 }
-function renderPromptPay(total){
-  const box=document.getElementById("ppay");
+function renderPromptPay(total, boxId, qrId){
+  boxId=boxId||"ppay"; qrId=qrId||"ppayqr";
+  const box=document.getElementById(boxId);
   const id=String(window.PROMPTPAY_ID||"").replace(/[^0-9]/g,"");
   if(!box||!id||!(total>0)||typeof QRCode==="undefined") return;
   box.className="ppay-box";
   box.innerHTML=`<div class="pp-h">สแกนจ่ายด้วย PromptPay</div>
     <div style="color:var(--ink-soft);font-size:13px">ยอด <span class="mono" style="font-size:15px;color:var(--ink)">฿${total}</span></div>
-    <div class="ppay-qr" id="ppayqr"></div>
+    <div class="ppay-qr" id="${qrId}"></div>
     <div style="color:var(--ink-soft);font-size:12px">เปิดแอปธนาคาร → สแกน QR → ยอดขึ้นอัตโนมัติ</div>`;
-  try{ new QRCode(document.getElementById("ppayqr"),{text:promptPayPayload(id,total),width:196,height:196,correctLevel:QRCode.CorrectLevel.M}); }
+  try{ new QRCode(document.getElementById(qrId),{text:promptPayPayload(id,total),width:196,height:196,correctLevel:QRCode.CorrectLevel.M}); }
   catch(e){ console.error("PromptPay QR error",e); box.innerHTML=""; }
 }
+
+// ---------- เรียกพนักงาน / เก็บเงิน (เขียนเข้า /calls ให้หน้าครัวเห็น) ----------
+function callKitchen(type,extra){
+  if(!window.__db) return;
+  try{ window.__db.ref("calls").push(Object.assign({table:String(table||"—"),type:type,at:firebase.database.ServerValue.TIMESTAMP},extra||{})); }
+  catch(e){ console.warn("call error",e); }
+}
+
+// ---------- บิลลูกค้า (เก็บใน localStorage ต่อโต๊ะ/วัน) ----------
+function todayStr(){const d=new Date();return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
+function billKey(){return "mf_bill_"+(table||"_");}
+function getBill(){ try{const b=JSON.parse(localStorage.getItem(billKey())||"null"); if(b&&b.date===todayStr())return b;}catch(e){} return {date:todayStr(),orders:[]}; }
+function addToBill(orderNo,total,items){ const b=getBill(); b.orders.push({orderNo,total,items}); try{localStorage.setItem(billKey(),JSON.stringify(b));}catch(e){} }
+function billTotal(){ return getBill().orders.reduce((s,o)=>s+(o.total||0),0); }
+function refreshBillBtn(){ const btn=document.getElementById("billBtn"); if(btn) btn.classList.toggle("hidden", getBill().orders.length===0); }
+function openBill(){
+  closeSheet();
+  const b=getBill(), total=billTotal();
+  let body;
+  if(!b.orders.length){
+    body=`<p style="text-align:center;color:var(--ink-soft);padding:40px 0">ยังไม่มีรายการสั่งวันนี้</p>`;
+  }else{
+    let rowsHtml="";
+    b.orders.forEach(o=>(o.items||[]).forEach(it=>{
+      const adon=(it.addons||[]).map(a=>"+"+a.nm).join(" ");
+      const opt=[it.temp,it.sweet,it.spicy,adon].filter(Boolean).join(" · ");
+      rowsHtml+=`<div class="crow"><div class="info"><div class="cnm">${esc(it.qty)}× ${esc(it.nm)}</div>${opt?`<div class="copt">${esc(opt)}</div>`:""}</div><div class="cside"><div class="mono">฿${(it.up||it.pr)*it.qty}</div></div></div>`;
+    }));
+    body=`${rowsHtml}
+      <div class="sumrow total" style="margin-top:12px"><span>ยอดที่ต้องชำระ</span><span class="mono">฿${total}</span></div>
+      <div id="ppayBill"></div>
+      <button class="cta" id="callPayBtn"><span>🔔 เรียกพนักงานเก็บเงิน</span><span class="mono">฿${total}</span></button>`;
+  }
+  sheet=document.createElement("div");sheet.className="sheet-wrap";
+  sheet.innerHTML=`<div class="sheet"><div class="sheet-head"><h2>เก็บเงิน · โต๊ะ ${table||"—"}</h2><button class="x" aria-label="ปิด">×</button></div><div class="sheet-body">${body}</div></div>`;
+  document.body.appendChild(sheet);
+  sheet.querySelector(".x").onclick=closeSheet;
+  sheet.onclick=e=>{if(e.target===sheet)closeSheet();};
+  renderPromptPay(total,"ppayBill","ppayBillQr");
+  const cp=sheet.querySelector("#callPayBtn");
+  if(cp) cp.onclick=()=>{ cp.disabled=true; callKitchen("bill",{total:total}); try{localStorage.removeItem(billKey());}catch(e){} refreshBillBtn(); toast("เรียกพนักงานมาเก็บเงินแล้ว 🔔"); closeSheet(); };
+}
+const billBtnEl=document.getElementById("billBtn");
+if(billBtnEl) billBtnEl.onclick=openBill;
+refreshBillBtn();
 
 // ---------- เมนูหมด: ฟัง /stock จาก Firebase ----------
 if(window.__db){

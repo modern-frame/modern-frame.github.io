@@ -46,6 +46,11 @@
   .tab.on .badge{background:var(--ink);color:var(--cream)}
   .hsum{max-width:1100px;margin:9px auto 0;font-size:13px;color:#C9BBA6;text-align:center}
   .hsum b{color:var(--cream)}
+  .callsBar{max-width:1100px;margin:10px auto 0;display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+  .callchip{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;padding:8px 14px;border-radius:999px;border:none;animation:pop .4s ease}
+  .callchip.bill{background:#F6E9D4;color:#B4762B}
+  .callchip.staff{background:#E6EEF6;color:#3A6098}
+  .callchip .cx{width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.12);display:inline-flex;align-items:center;justify-content:center;font-size:12px}
   /* stock manager modal */
   .modal-wrap{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:40px 14px;overflow-y:auto}
   .modal{background:var(--card);color:var(--ink);width:100%;max-width:520px;border-radius:16px;overflow:hidden}
@@ -178,6 +183,7 @@
       <button class="tab" data-tab="served">เสร็จแล้ววันนี้ <span class="badge" id="bServed">0</span></button>
     </div>
     <div class="hsum" id="hsum"></div>
+    <div class="callsBar hidden" id="callsBar"></div>
   </header>
   <main>
     <div class="grid" id="grid"></div>
@@ -249,6 +255,7 @@ let newKeys=new Set();    // keys ที่เพิ่งเข้ามา (�
 let soldOut={};           // {itemId:true} = เมนูที่กดปิด (ของหมด)
 let stockOpen=false;      // เปิดหน้าจัดการเมนูอยู่ไหม
 let wakeLock=null;        // กันจอดับ
+let calls={}, seenCalls=new Set(), primedCalls=false;  // เรียกพนักงาน/เก็บเงิน
 
 async function keepAwake(){
   try{ if("wakeLock" in navigator){ wakeLock=await navigator.wakeLock.request("screen"); } }
@@ -306,7 +313,34 @@ function enterApp(){
   window.__db.ref("stock").on("value",s=>{ soldOut=s.val()||{}; if(stockOpen) renderStockRows(); }, err=>console.warn("อ่านสถานะสต๊อกไม่ได้:",err&&err.code));
   // ปุ่มจัดการเมนู (ของหมด)
   $("stockBtn").onclick=openStockManager;
+  // เรียกพนักงาน / เก็บเงิน จากลูกค้า
+  window.__db.ref("calls").orderByChild("at").limitToLast(40).on("value",snap=>{
+    const val=snap.val()||{};
+    Object.keys(val).forEach(k=>{ if(!seenCalls.has(k)){ seenCalls.add(k); if(primedCalls) onNewCall(val[k]); } });
+    calls=val; primedCalls=true;
+    seenCalls.forEach(k=>{ if(!(k in val)) seenCalls.delete(k); });
+    renderCalls();
+  }, err=>console.warn("อ่าน calls ไม่ได้:",err&&err.code));
 }
+function onNewCall(c){
+  beep();
+  const msg = c.type==="bill" ? "💵 โต๊ะ "+(c.table||"—")+" เรียกเก็บเงิน ฿"+(c.total||0) : "🔔 โต๊ะ "+(c.table||"—")+" เรียกพนักงาน";
+  showToast(msg);
+  try{ if("Notification" in window && Notification.permission==="granted") new Notification(msg,{tag:"call-"+(c.table||"")}); }catch(e){}
+}
+function renderCalls(){
+  const bar=$("callsBar"); if(!bar) return;
+  const arr=Object.keys(calls).map(k=>Object.assign({key:k},calls[k])).sort((a,b)=>(a.at||Infinity)-(b.at||Infinity));
+  if(!arr.length){ bar.innerHTML=""; bar.classList.add("hidden"); return; }
+  bar.classList.remove("hidden");
+  bar.innerHTML=arr.map(c=>{
+    const isBill=c.type==="bill";
+    const label=isBill ? `💵 โต๊ะ ${esc(c.table||"—")} เก็บเงิน ฿${esc(c.total||0)}` : `🔔 โต๊ะ ${esc(c.table||"—")} เรียกพนักงาน`;
+    return `<button class="callchip ${isBill?'bill':'staff'}" data-call="${esc(c.key)}">${label} <span class="cx">✓</span></button>`;
+  }).join("");
+  bar.querySelectorAll("[data-call]").forEach(b=>b.onclick=()=>clearCall(b.dataset.call));
+}
+function clearCall(key){ window.__db.ref("calls/"+key).remove().catch(e=>showToast("ทำรายการไม่สำเร็จ")); delete calls[key]; renderCalls(); }
 
 function onNewOrder(o){
   beep();
@@ -392,7 +426,8 @@ const STAT={received:["received","🆕 ใหม่ · รอเริ่ม"],p
 
 function card(o){
   const items=(o.items||[]).map(it=>{
-    const opt=[it.temp,it.sweet].filter(Boolean).join(" · ");
+    const adon=(it.addons||[]).map(a=>"+"+a.nm).join(" ");
+    const opt=[it.temp,it.sweet,it.spicy,adon].filter(Boolean).join(" · ");
     return `<div class="li"><span class="q">${esc(it.qty)}×</span><span style="flex:1;min-width:0">
       <span class="nm">${esc(it.nm)}</span>
       ${opt?`<div class="opt">${esc(opt)}</div>`:""}
